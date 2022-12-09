@@ -1,0 +1,47 @@
+{
+  "name": "trim-html-server",
+  "version": "0.0.1",
+  "description": "Remove whitespaces between html tags, served with hot reload.",
+  "main": "index.js",
+  "bin": {
+    "trim-html-server": "./out.js"
+  },
+  "files": [
+    "out.js"
+  ],
+  "scripts": {
+    "start": "node ../node-scripts/nodejs-watch-runner.js index.js",
+    "build": "esbuild --bundle --platform=node --target=node18 --external:./node_modules/* --outfile=out.js cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LitileXueZha/node-trim-html-server.git"
+  },
+  "keywords": [
+    "trim",
+    "whitespace",
+    "html",
+    "static",
+    "server",
+    "hot-reload"
+  ],
+  "author": "litilexuezha",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/LitileXueZha/node-trim-html-server/issues"
+  },
+  "homepage": "https://github.com/LitileXueZha/node-trim-html-server#readme",
+  "dependencies": {
+    "html-minifier-terser": "^7.1.0"
+  },
+  "devDependencies": {
+    "cz-conventional-changelog": "^3.3.0",
+    "esbuild": "^0.16.3"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}
