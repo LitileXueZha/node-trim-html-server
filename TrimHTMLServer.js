@@ -41,7 +41,8 @@ class TrimHTMLServer extends events {
         this.context = context;
         this.opts = opts;
         this.watchers = {};
-        this.refs = {};
+        this.watcherRefs = {}; // a watcher may contains multi Referer
+        this.paths = {};
         this.unwatchPaths = new Set();
         this.serve = this.serve.bind(this);
         this.unwatchGC = this.unwatchGC.bind(this);
@@ -113,10 +114,26 @@ class TrimHTMLServer extends events {
         }
         // Exclude non-standard requests and soruce map files.
         if (referer && ext !== 'map') {
-            if (!this.refs[referer]) {
-                this.refs[referer] = new Set();
+            if (!this.paths[referer]) {
+                this.paths[referer] = new Set();
             }
-            this.refs[referer].add(filePath);
+            this.paths[referer].add(filePath);
+        }
+        // Resources not loaded from original *.html, but another resource file.
+        // Eg: css @import
+        if (referer && !referer.endsWith('.html')) {
+            const { pathname: refPath } = new URL(referer);
+            const refererPath = path.join(this.context, refPath);
+            let refref;
+            for (const r in this.paths) {
+                if (this.paths[r]?.has(refererPath)) {
+                    refref = r;
+                    break;
+                }
+            }
+            if (refref) {
+                this.paths[refref].add(filePath);
+            }
         }
     }
 
@@ -132,7 +149,7 @@ class TrimHTMLServer extends events {
         }
         res.setHeader('content-type', 'text/event-stream');
         res.write('event: sse\ndata: connected\n\n');
-        const files = this.refs[referer];
+        const files = this.paths[referer];
         if (!files || files.size === 0) {
             // Browser may use BF cache, files are not collected.
             //
@@ -140,18 +157,21 @@ class TrimHTMLServer extends events {
             res.write('event: message\ndata: 1\n\n');
             return;
         }
+        // console.log('Paths: %o, watched:', this.paths, Object.keys(this.watchers));
         for (const filePath of files) {
             if (filePath in this.watchers) {
                 this.unwatchPaths.delete(filePath);
+                this.watcherRefs[filePath].add(referer);
             } else {
                 const watcher = watch(filePath, (eventType, data) => {
-                    this.emit('filechange', filePath, referer);
+                    this.emit('filechange', filePath);
                 });
                 this.watchers[filePath] = watcher;
+                this.watcherRefs[filePath] = new Set([referer]);
             }
         }
-        const sendReloadMessage = (filePath, from) => {
-            if (from === referer) {
+        const sendReloadMessage = (filePath) => {
+            if (this.watcherRefs[filePath]?.has(referer)) {
                 res.write('event: message\ndata: 1\n\n');
             }
         }
@@ -160,7 +180,10 @@ class TrimHTMLServer extends events {
         this.once('filechange', sendReloadMessage);
         req.on('close', () => {
             // When connection closed, those files' watcher will be auto closed.
-            files.forEach((f) => this.unwatchPaths.add(f));
+            files.forEach((f) => {
+                this.unwatchPaths.add(f);
+                this.watcherRefs[f].delete(referer);
+            });
             this.off('filechange', sendReloadMessage);
         });
         // console.log(files, Object.keys(this.watchers).length, referer);
