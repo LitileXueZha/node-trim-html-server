@@ -88,6 +88,9 @@ class TrimHTMLServer extends events {
         let { referer, host } = req.headers;
         if (ext === 'html') {
             // The first request headers may not include "Referer"
+            //
+            // "Referer" is controlled by referrer policy.
+            // See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy
             if (!referer) {
                 referer = `http://${host}${pathname}`;
             }
@@ -112,27 +115,30 @@ class TrimHTMLServer extends events {
         } else {
             fStream.pipe(gzip).pipe(res);
         }
-        // Exclude non-standard requests and soruce map files.
-        if (referer && ext !== 'map') {
-            if (!this.paths[referer]) {
-                this.paths[referer] = new Set();
-            }
-            this.paths[referer].add(filePath);
-        }
-        // Resources not loaded from original *.html, but another resource file.
-        // Eg: css @import
-        if (referer && !referer.endsWith('.html')) {
-            const { pathname: refPath } = new URL(referer);
-            const refererPath = path.join(this.context, refPath);
-            let refref;
-            for (const r in this.paths) {
-                if (this.paths[r]?.has(refererPath)) {
-                    refref = r;
-                    break;
+        if (referer) {
+            referer = referer.replace(REG_TRIM_URL, '');
+            // Exclude non-standard requests and soruce map files.
+            if (ext !== 'map') {
+                if (!this.paths[referer]) {
+                    this.paths[referer] = new Set();
                 }
+                this.paths[referer].add(filePath);
             }
-            if (refref) {
-                this.paths[refref].add(filePath);
+            // Resources not loaded from original *.html, but another resource file.
+            // Eg: css @import
+            if (!referer.endsWith('.html')) {
+                const { pathname: refPath } = new URL(referer);
+                const refererPath = path.join(this.context, refPath);
+                let refref;
+                for (const r in this.paths) {
+                    if (this.paths[r]?.has(refererPath)) {
+                        refref = r;
+                        break;
+                    }
+                }
+                if (refref) {
+                    this.paths[refref].add(filePath);
+                }
             }
         }
     }
@@ -142,11 +148,12 @@ class TrimHTMLServer extends events {
      * @param {http.ServerResponse} res 
      */
     sse(req, res) {
-        const { referer } = req.headers;
+        let { referer } = req.headers;
         if (!referer) {
             res.end();
             return;
         }
+        referer = referer.replace(REG_TRIM_URL, '');
         res.setHeader('content-type', 'text/event-stream');
         res.write('event: sse\ndata: connected\n\n');
         const files = this.paths[referer];
@@ -194,7 +201,8 @@ class TrimHTMLServer extends events {
     unwatchGC() {
         for (const filePath of this.unwatchPaths) {
             const watcher = this.watchers[filePath];
-            if (watcher) {
+            const referers = this.watcherRefs[filePath];
+            if (watcher && (!referers || referers.size === 0)) {
                 watcher.close();
                 delete this.watchers[filePath];
                 console.log('unwatch %o', filePath);
