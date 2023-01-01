@@ -115,32 +115,36 @@ class TrimHTMLServer extends events {
         } else {
             fStream.pipe(gzip).pipe(res);
         }
-        if (referer) {
-            referer = referer.replace(REG_TRIM_URL, '');
-            // Exclude non-standard requests and soruce map files.
-            if (ext !== 'map') {
-                if (!this.paths[referer]) {
-                    this.paths[referer] = new Set();
+        fStream.on('end', () => {
+            // File not exists
+            if (res.statusCode === 404) return;
+            if (referer) {
+                referer = referer.replace(REG_TRIM_URL, '');
+                // Exclude non-standard requests and soruce map files.
+                if (ext !== 'map') {
+                    if (!this.paths[referer]) {
+                        this.paths[referer] = new Set();
+                    }
+                    this.paths[referer].add(filePath);
                 }
-                this.paths[referer].add(filePath);
-            }
-            // Resources not loaded from original *.html, but another resource file.
-            // Eg: css @import
-            if (!referer.endsWith('.html')) {
-                const { pathname: refPath } = new URL(referer);
-                const refererPath = path.join(this.context, refPath);
-                let refref;
-                for (const r in this.paths) {
-                    if (this.paths[r]?.has(refererPath)) {
-                        refref = r;
-                        break;
+                // Resources not loaded from original *.html, but another resource file.
+                // Eg: css @import
+                if (!referer.endsWith('.html')) {
+                    const { pathname: refPath } = new URL(referer);
+                    const refererPath = path.join(this.context, refPath);
+                    let refref;
+                    for (const r in this.paths) {
+                        if (this.paths[r]?.has(refererPath)) {
+                            refref = r;
+                            break;
+                        }
+                    }
+                    if (refref) {
+                        this.paths[refref].add(filePath);
                     }
                 }
-                if (refref) {
-                    this.paths[refref].add(filePath);
-                }
             }
-        }
+        });
     }
 
     /**
